@@ -1,28 +1,33 @@
+from __future__ import print_function
 import os
 import re
-import urllib2
+from six.moves.urllib.request import urlopen
+from six.moves.urllib.error import HTTPError
 import shutil
 import argparse
 import mistune
 import bs4 as BeautifulSoup
+import socket
+import time
 
 def download_pdf(link, location, name):
     try:
-        response = urllib2.urlopen(link)
+        response = urlopen(link, timeout=500)
         file = open(os.path.join(location, name), 'w')
         file.write(response.read())
         file.close()
-    except urllib2.HTTPError:
+    except HTTPError:
         print('>>> Error 404: cannot be downloaded!\n') 
         raise   
+    except socket.timeout:
+        print(" ".join(("can't download", link, "due to connection timeout!")) )
+        raise
 
 def clean_pdf_link(link):
     if 'arxiv' in link:
         link = link.replace('abs', 'pdf')   
         if not(link.endswith('.pdf')):
             link = '.'.join((link, 'pdf'))
-    if 'github' in link:
-        link = '.'.join((link, 'html'))        
     return link
 
 def clean_text(text, replacements = {' ': '_', '/': '_', '.': '', '"': ''}):
@@ -81,7 +86,8 @@ if __name__ == '__main__':
                     current_directory = h1_directory
                 elif point.name == 'h2':
                     current_directory = os.path.join(h1_directory, clean_text(point.text))  
-                os.makedirs(current_directory)
+                if not os.path.exists(current_directory):
+                    os.makedirs(current_directory)
                 print_title(point.text)
 
             if point.name == 'p':
@@ -93,7 +99,16 @@ if __name__ == '__main__':
                         print(shorten_title(point.text) + ' (' + link + ')')
                         try:
                             name = clean_text(point.text.split('[' + ext + ']')[0])
-                            download_pdf(link, current_directory, '.'.join((name, ext)))
+                            fullname = '.'.join((name, ext))
+                            if not os.path.exists('/'.join((current_directory, fullname)) ):
+                               download_pdf(link, current_directory, '.'.join((name, ext)))
+                        except KeyboardInterrupt:
+                            try:
+                                print("Press Ctrl-C in 1 second to quit")
+                                time.sleep(1)
+                            except KeyboardInterrupt:
+                                print("Cancelling..")
+                                break
                         except:
                             failures.append(point.text)
                         
